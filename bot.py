@@ -62,9 +62,10 @@ async def start(
         return
 
     await update.message.reply_text(
-        "🤖 Reverse AI فعاله!\n\n"
-        "هر چند پیام، یه سؤال تصادفی از یکی از اعضا می‌پرسم "
-        "و گاهی هم یه نظرسنجی برای کل گروه می‌سازم."
+        "😂 سلام بچه‌ها!\n\n"
+        "من یه باتم که هر از گاهی یه سؤال عجیب‌غریب "
+        "می‌پرسم و بعد می‌گم اگه جای شما بودم چی کار می‌کردم.\n\n"
+        "حواستون باشه ممکنه یهو وسط چت سر و کله‌م پیدا شه 👀"
     )
 
 
@@ -80,15 +81,15 @@ async def handle_message(
     chat = update.effective_chat
     user = update.effective_user
 
-    # Group only
+    # فقط گروه و سوپرگروه
     if chat.type not in ("group", "supergroup"):
         return
 
-    # Ignore bots
+    # پیام بات‌ها شمرده نشود
     if user is None or user.is_bot:
         return
 
-    # Text only
+    # فعلاً فقط پیام متنی
     if not message.text:
         return
 
@@ -99,7 +100,7 @@ async def handle_message(
     ensure_group(chat_id)
 
     # --------------------------------------------------
-    # 1. Check whether this user is answering a question
+    # پاسخ به سؤال شخصی
     # --------------------------------------------------
 
     pending = get_pending_question(
@@ -108,47 +109,59 @@ async def handle_message(
     )
 
     if pending:
-        question = pending["question"]
+        reply = message.reply_to_message
 
-        # Don't count the answer as a new normal message.
-        try:
-            await message.reply_text(
-                "🧠 دارم فکر می‌کنم..."
-            )
+        # فقط اگر کاربر واقعاً Reply کرده باشد
+        # و Reply دقیقاً به سؤال بات باشد
+        if (
+            reply
+            and reply.from_user
+            and reply.from_user.is_bot
+            and reply.message_id == pending["question_message_id"]
+        ):
+            question = pending["question"]
 
-            answer = await analyze_personal_answer(
-                question,
-                text,
-            )
+            try:
+                await message.reply_text(
+                    "🧠 صبر کن ببینم چی می‌گم 😂"
+                )
 
-            await message.reply_text(
-                f"🤖 {answer}"
-            )
+                answer = await analyze_personal_answer(
+                    question,
+                    text,
+                )
 
-            new_target = random.randint(
-                PERSONAL_MIN_MESSAGES,
-                PERSONAL_MAX_MESSAGES,
-            )
+                await message.reply_text(
+                    f"🤖 {answer}"
+                )
 
-            finish_question(
-                chat_id,
-                user_id,
-                new_target,
-            )
+                new_target = random.randint(
+                    PERSONAL_MIN_MESSAGES,
+                    PERSONAL_MAX_MESSAGES,
+                )
 
-        except Exception:
-            logger.exception(
-                "Error while analyzing answer"
-            )
+                finish_question(
+                    chat_id,
+                    user_id,
+                    new_target,
+                )
 
-            await message.reply_text(
-                "❌ یه مشکلی هنگام ارتباط با AI پیش اومد."
-            )
+            except Exception:
+                logger.exception(
+                    "Error while analyzing answer"
+                )
 
-        return
+                await message.reply_text(
+                    "😂 یه مشکلی پیش اومد، جوابم نرسید."
+                )
+
+            return
+
+        # اگر Reply نکرده، پیام عادی حساب می‌شود.
+        # یعنی سؤال همچنان منتظر پاسخ است.
 
     # --------------------------------------------------
-    # 2. Make sure user exists
+    # ساخت کاربر
     # --------------------------------------------------
 
     user_data = get_user(
@@ -169,7 +182,7 @@ async def handle_message(
         )
 
     # --------------------------------------------------
-    # 3. Count user's message
+    # شمارش پیام کاربر
     # --------------------------------------------------
 
     user_count = increment_user_messages(
@@ -183,21 +196,25 @@ async def handle_message(
     )
 
     # --------------------------------------------------
-    # 4. Personal question
+    # سؤال شخصی
     # --------------------------------------------------
 
-    if user_count >= user_data["target_count"]:
+    if (
+        user_count >= user_data["target_count"]
+        and not user_data["waiting_answer"]
+    ):
         try:
             question = await generate_personal_question()
+
+            sent = await message.reply_text(
+                f"🤔 یه سؤال برات:\n\n{question}"
+            )
 
             set_question(
                 chat_id,
                 user_id,
                 question,
-            )
-
-            await message.reply_text(
-                f"🤔 یه سؤال برای تو:\n\n{question}"
+                sent.message_id,
             )
 
         except Exception:
@@ -206,14 +223,11 @@ async def handle_message(
             )
 
             await message.reply_text(
-                "❌ نتونستم سؤال بسازم؛ بعداً دوباره امتحان می‌کنم."
+                "😂 مغزم هنگ کرد، فعلاً سؤال ندارم."
             )
 
-        # Don't return here.
-        # The group message should still count.
-
     # --------------------------------------------------
-    # 5. Count group messages
+    # شمارش پیام‌های کل گروه
     # --------------------------------------------------
 
     group_count = increment_group_messages(
@@ -238,7 +252,7 @@ async def create_group_poll(
 ):
     chat_id = update.effective_chat.id
 
-    # Lock immediately to prevent duplicate polls.
+    # قفل فوری برای جلوگیری از Poll تکراری
     set_poll_active(chat_id, True)
 
     try:
@@ -288,7 +302,10 @@ async def create_group_poll(
             "Error creating group poll"
         )
 
-        set_poll_active(chat_id, False)
+        set_poll_active(
+            chat_id,
+            False,
+        )
 
 
 async def finish_poll(
@@ -309,7 +326,6 @@ async def finish_poll(
         return
 
     try:
-        # Close poll and get final results.
         result = await context.bot.stop_poll(
             chat_id=chat_id,
             message_id=message_id,
@@ -323,9 +339,9 @@ async def finish_poll(
         await context.bot.send_message(
             chat_id=chat_id,
             text=(
-                "📊 رأی‌گیری تموم شد!\n\n"
-                f"🤖 انتخاب من: {ai_option}\n\n"
-                f"🧠 دلیل من:\n{reason}"
+                "📊 خب، رأی‌گیری تموم شد 😂\n\n"
+                f"🤖 من: {ai_option}\n\n"
+                f"💭 دلیلش:\n{reason}"
             ),
         )
 
@@ -354,6 +370,15 @@ async def error_handler(
         "Unhandled exception:",
         exc_info=context.error,
     )
+
+
+def context_has_job_queue():
+    try:
+        from telegram.ext import JobQueue
+
+        return JobQueue is not None
+    except ImportError:
+        return False
 
 
 def main():
@@ -398,15 +423,6 @@ def main():
     )
 
     application.run_polling()
-
-
-def context_has_job_queue():
-    try:
-        from telegram.ext import JobQueue
-
-        return JobQueue is not None
-    except ImportError:
-        return False
 
 
 if __name__ == "__main__":
