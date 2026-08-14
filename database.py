@@ -1,6 +1,7 @@
 import sqlite3
 from contextlib import closing
 
+
 DB_NAME = "reverse_ai.db"
 
 
@@ -12,13 +13,18 @@ def get_connection():
 
 def init_db():
     with closing(get_connection()) as conn:
+
         conn.execute("""
             CREATE TABLE IF NOT EXISTS groups (
                 chat_id INTEGER PRIMARY KEY,
                 message_count INTEGER NOT NULL DEFAULT 0,
-                poll_active INTEGER NOT NULL DEFAULT 0
+                poll_active INTEGER NOT NULL DEFAULT 0,
+                xp INTEGER NOT NULL DEFAULT 0,
+                level INTEGER NOT NULL DEFAULT 1,
+                total_messages INTEGER NOT NULL DEFAULT 0
             )
         """)
+
 
         conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -29,9 +35,10 @@ def init_db():
                 waiting_answer INTEGER NOT NULL DEFAULT 0,
                 question TEXT,
                 question_message_id INTEGER,
-                PRIMARY KEY (chat_id, user_id)
+                PRIMARY KEY(chat_id, user_id)
             )
         """)
+
 
         conn.execute("""
             CREATE TABLE IF NOT EXISTS polls (
@@ -41,46 +48,84 @@ def init_db():
                 options TEXT NOT NULL,
                 ai_choice INTEGER NOT NULL,
                 reason TEXT NOT NULL,
-                PRIMARY KEY (chat_id, message_id)
+                challenge_mode INTEGER DEFAULT 0,
+                PRIMARY KEY(chat_id, message_id)
             )
         """)
 
-        # Migration for existing databases
-        columns = conn.execute(
-            "PRAGMA table_info(users)"
-        ).fetchall()
 
-        column_names = {
-            column["name"]
-            for column in columns
+        # migration
+        tables = {
+            "groups": [
+                ("xp", "INTEGER DEFAULT 0"),
+                ("level", "INTEGER DEFAULT 1"),
+                ("total_messages", "INTEGER DEFAULT 0")
+            ],
+            "users": [
+                ("question_message_id", "INTEGER")
+            ],
+            "polls": [
+                ("challenge_mode", "INTEGER DEFAULT 0")
+            ]
         }
 
-        if "question_message_id" not in column_names:
-            conn.execute("""
-                ALTER TABLE users
-                ADD COLUMN question_message_id INTEGER
-            """)
+
+        for table, columns in tables.items():
+
+            existing = conn.execute(
+                f"PRAGMA table_info({table})"
+            ).fetchall()
+
+            names = {
+                col["name"]
+                for col in existing
+            }
+
+
+            for name, sql_type in columns:
+
+                if name not in names:
+
+                    conn.execute(
+                        f"""
+                        ALTER TABLE {table}
+                        ADD COLUMN {name} {sql_type}
+                        """
+                    )
+
 
         conn.commit()
 
 
-def ensure_group(chat_id: int):
+
+# ---------------- GROUP ----------------
+
+
+def ensure_group(chat_id):
+
     with closing(get_connection()) as conn:
+
         conn.execute(
             """
             INSERT OR IGNORE INTO groups
-            (chat_id, message_count, poll_active)
-            VALUES (?, 0, 0)
+            (
+                chat_id
+            )
+            VALUES (?)
             """,
             (chat_id,)
         )
+
         conn.commit()
 
 
-def get_group(chat_id: int):
+
+def get_group(chat_id):
+
     ensure_group(chat_id)
 
     with closing(get_connection()) as conn:
+
         return conn.execute(
             """
             SELECT *
@@ -91,35 +136,69 @@ def get_group(chat_id: int):
         ).fetchone()
 
 
-def increment_group_messages(chat_id: int) -> int:
+
+def add_group_message(chat_id):
+
     ensure_group(chat_id)
 
     with closing(get_connection()) as conn:
+
         conn.execute(
             """
             UPDATE groups
-            SET message_count = message_count + 1
+            SET
+                message_count = message_count + 1,
+                xp = xp + 1,
+                total_messages = total_messages + 1
             WHERE chat_id = ?
             """,
             (chat_id,)
         )
 
+
         row = conn.execute(
             """
-            SELECT message_count
+            SELECT *
             FROM groups
             WHERE chat_id = ?
             """,
             (chat_id,)
         ).fetchone()
 
+
         conn.commit()
 
-        return row["message_count"]
+        return row
 
 
-def reset_group_messages(chat_id: int):
+
+def update_level(
+    chat_id,
+    level
+):
+
     with closing(get_connection()) as conn:
+
+        conn.execute(
+            """
+            UPDATE groups
+            SET level = ?
+            WHERE chat_id = ?
+            """,
+            (
+                level,
+                chat_id
+            )
+        )
+
+        conn.commit()
+
+
+
+def reset_group_messages(chat_id):
+
+    with closing(get_connection()) as conn:
+
         conn.execute(
             """
             UPDATE groups
@@ -128,105 +207,152 @@ def reset_group_messages(chat_id: int):
             """,
             (chat_id,)
         )
+
         conn.commit()
 
 
-def set_poll_active(chat_id: int, active: bool):
+
+def set_poll_active(
+    chat_id,
+    active
+):
+
     with closing(get_connection()) as conn:
+
         conn.execute(
             """
             UPDATE groups
             SET poll_active = ?
             WHERE chat_id = ?
             """,
-            (1 if active else 0, chat_id)
+            (
+                1 if active else 0,
+                chat_id
+            )
         )
+
         conn.commit()
 
 
-def get_user(chat_id: int, user_id: int):
+
+# ---------------- USERS ----------------
+
+
+def get_user(
+    chat_id,
+    user_id
+):
+
     with closing(get_connection()) as conn:
+
         return conn.execute(
             """
             SELECT *
             FROM users
-            WHERE chat_id = ? AND user_id = ?
+            WHERE chat_id = ?
+            AND user_id = ?
             """,
-            (chat_id, user_id)
+            (
+                chat_id,
+                user_id
+            )
         ).fetchone()
 
 
+
 def create_user(
-    chat_id: int,
-    user_id: int,
-    target_count: int
+    chat_id,
+    user_id,
+    target
 ):
+
     with closing(get_connection()) as conn:
+
         conn.execute(
             """
             INSERT OR IGNORE INTO users
             (
                 chat_id,
                 user_id,
-                message_count,
-                target_count,
-                waiting_answer,
-                question_message_id
+                target_count
             )
-            VALUES (?, ?, 0, ?, 0, NULL)
+            VALUES
+            (?, ?, ?)
             """,
-            (chat_id, user_id, target_count)
+            (
+                chat_id,
+                user_id,
+                target
+            )
         )
 
         conn.commit()
 
 
+
 def increment_user_messages(
-    chat_id: int,
-    user_id: int
-) -> int:
+    chat_id,
+    user_id
+):
+
     with closing(get_connection()) as conn:
+
         conn.execute(
             """
             UPDATE users
             SET message_count = message_count + 1
-            WHERE chat_id = ? AND user_id = ?
+            WHERE chat_id = ?
+            AND user_id = ?
             """,
-            (chat_id, user_id)
+            (
+                chat_id,
+                user_id
+            )
         )
+
 
         row = conn.execute(
             """
             SELECT message_count
             FROM users
-            WHERE chat_id = ? AND user_id = ?
+            WHERE chat_id = ?
+            AND user_id = ?
             """,
-            (chat_id, user_id)
+            (
+                chat_id,
+                user_id
+            )
         ).fetchone()
+
 
         conn.commit()
 
         return row["message_count"]
 
 
+
 def set_question(
-    chat_id: int,
-    user_id: int,
-    question: str,
-    question_message_id: int
+    chat_id,
+    user_id,
+    question,
+    message_id
 ):
+
     with closing(get_connection()) as conn:
+
         conn.execute(
             """
             UPDATE users
-            SET question = ?,
+            SET
+                question = ?,
                 question_message_id = ?,
                 waiting_answer = 1
-            WHERE chat_id = ? AND user_id = ?
+            WHERE chat_id = ?
+            AND user_id = ?
             """,
             (
                 question,
-                question_message_id,
+                message_id,
                 chat_id,
                 user_id
             )
@@ -235,41 +361,52 @@ def set_question(
         conn.commit()
 
 
+
 def get_pending_question(
-    chat_id: int,
-    user_id: int
+    chat_id,
+    user_id
 ):
+
     with closing(get_connection()) as conn:
+
         return conn.execute(
             """
-            SELECT question, question_message_id
+            SELECT *
             FROM users
             WHERE chat_id = ?
-              AND user_id = ?
-              AND waiting_answer = 1
+            AND user_id = ?
+            AND waiting_answer = 1
             """,
-            (chat_id, user_id)
+            (
+                chat_id,
+                user_id
+            )
         ).fetchone()
 
 
+
 def finish_question(
-    chat_id: int,
-    user_id: int,
-    new_target: int
+    chat_id,
+    user_id,
+    target
 ):
+
     with closing(get_connection()) as conn:
+
         conn.execute(
             """
             UPDATE users
-            SET message_count = 0,
+            SET
+                message_count = 0,
                 target_count = ?,
                 waiting_answer = 0,
                 question = NULL,
                 question_message_id = NULL
-            WHERE chat_id = ? AND user_id = ?
+            WHERE chat_id = ?
+            AND user_id = ?
             """,
             (
-                new_target,
+                target,
                 chat_id,
                 user_id
             )
@@ -278,27 +415,27 @@ def finish_question(
         conn.commit()
 
 
+
+# ---------------- POLLS ----------------
+
+
 def save_poll(
-    chat_id: int,
-    message_id: int,
-    question: str,
-    options: str,
-    ai_choice: int,
-    reason: str
+    chat_id,
+    message_id,
+    question,
+    options,
+    ai_choice,
+    reason,
+    challenge_mode
 ):
+
     with closing(get_connection()) as conn:
+
         conn.execute(
             """
             INSERT OR REPLACE INTO polls
-            (
-                chat_id,
-                message_id,
-                question,
-                options,
-                ai_choice,
-                reason
-            )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES
+            (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 chat_id,
@@ -306,33 +443,54 @@ def save_poll(
                 question,
                 options,
                 ai_choice,
-                reason
+                reason,
+                challenge_mode
             )
         )
 
         conn.commit()
 
 
-def get_poll(chat_id: int, message_id: int):
+
+def get_poll(
+    chat_id,
+    message_id
+):
+
     with closing(get_connection()) as conn:
+
         return conn.execute(
             """
             SELECT *
             FROM polls
             WHERE chat_id = ?
-              AND message_id = ?
+            AND message_id = ?
             """,
-            (chat_id, message_id)
+            (
+                chat_id,
+                message_id
+            )
         ).fetchone()
 
 
-def delete_poll(chat_id: int, message_id: int):
+
+def delete_poll(
+    chat_id,
+    message_id
+):
+
     with closing(get_connection()) as conn:
+
         conn.execute(
             """
             DELETE FROM polls
-            WHERE chat_id = ? AND message_id = ?
+            WHERE chat_id = ?
+            AND message_id = ?
             """,
-            (chat_id, message_id)
+            (
+                chat_id,
+                message_id
+            )
         )
+
         conn.commit()
