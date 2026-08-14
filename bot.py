@@ -123,7 +123,6 @@ async def handle_message(
     ensure_group(chat_id)
 
 
-
     # -----------------------------
     # پاسخ به سوال شخصی
     # -----------------------------
@@ -311,11 +310,14 @@ async def handle_message(
         and not group_data["poll_active"]
     ):
 
+        # call the top-level create_group_poll
         await create_group_poll(
             update,
             context,
-    )
-        async def create_group_poll(
+        )
+
+
+async def create_group_poll(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
@@ -395,7 +397,6 @@ async def handle_message(
             chat_id,
             False,
         )
-
 
 
 
@@ -504,7 +505,6 @@ async def finish_poll(
 
 
 
-
 async def error_handler(
     update: object,
     context: ContextTypes.DEFAULT_TYPE,
@@ -514,7 +514,6 @@ async def error_handler(
         "Unhandled exception:",
         exc_info=context.error,
     )
-
 
 
 
@@ -531,7 +530,6 @@ def context_has_job_queue():
     except ImportError:
 
         return False
-
 
 
 
@@ -555,7 +553,6 @@ def main():
 
 
     init_db()
-
 
 
     application = (
@@ -597,7 +594,6 @@ def main():
 
 
     application.run_polling()
-
 
 
 
