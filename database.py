@@ -54,12 +54,15 @@ def init_db():
         """)
 
 
-        # migration
+        # migration: additive ALTER TABLE for new columns
         tables = {
             "groups": [
                 ("xp", "INTEGER DEFAULT 0"),
                 ("level", "INTEGER DEFAULT 1"),
-                ("total_messages", "INTEGER DEFAULT 0")
+                ("total_messages", "INTEGER DEFAULT 0"),
+                ("bot_active", "INTEGER DEFAULT 1"),
+                ("personal_questions_enabled", "INTEGER DEFAULT 1"),
+                ("polls_enabled", "INTEGER DEFAULT 1"),
             ],
             "users": [
                 ("question_message_id", "INTEGER")
@@ -235,6 +238,73 @@ def set_poll_active(
 
 
 
+# ---------------- GROUP SETTINGS HELPERS ----------------
+
+
+def set_bot_active(chat_id, active):
+    """Enable or disable the bot for a specific group."""
+    with closing(get_connection()) as conn:
+        conn.execute(
+            """
+            UPDATE groups
+            SET bot_active = ?
+            WHERE chat_id = ?
+            """,
+            (
+                1 if active else 0,
+                chat_id,
+            ),
+        )
+        conn.commit()
+
+
+def set_personal_questions_enabled(chat_id, enabled):
+    """Enable or disable personal questions for a group."""
+    with closing(get_connection()) as conn:
+        conn.execute(
+            """
+            UPDATE groups
+            SET personal_questions_enabled = ?
+            WHERE chat_id = ?
+            """,
+            (
+                1 if enabled else 0,
+                chat_id,
+            ),
+        )
+        conn.commit()
+
+
+def set_polls_enabled(chat_id, enabled):
+    """Enable or disable group polls for a group."""
+    with closing(get_connection()) as conn:
+        conn.execute(
+            """
+            UPDATE groups
+            SET polls_enabled = ?
+            WHERE chat_id = ?
+            """,
+            (
+                1 if enabled else 0,
+                chat_id,
+            ),
+        )
+        conn.commit()
+
+
+def get_group_settings(chat_id):
+    """Return a dict with current group settings and stats."""
+    row = get_group(chat_id)
+    return {
+        "bot_active": bool(row["bot_active"]),
+        "personal_questions_enabled": bool(row["personal_questions_enabled"]),
+        "polls_enabled": bool(row["polls_enabled"]),
+        "level": row["level"],
+        "xp": row.get("xp", 0) if isinstance(row, dict) else row["xp"],
+    }
+
+
+
 # ---------------- USERS ----------------
 
 
@@ -344,153 +414,4 @@ def set_question(
             """
             UPDATE users
             SET
-                question = ?,
-                question_message_id = ?,
-                waiting_answer = 1
-            WHERE chat_id = ?
-            AND user_id = ?
-            """,
-            (
-                question,
-                message_id,
-                chat_id,
-                user_id
-            )
-        )
-
-        conn.commit()
-
-
-
-def get_pending_question(
-    chat_id,
-    user_id
-):
-
-    with closing(get_connection()) as conn:
-
-        return conn.execute(
-            """
-            SELECT *
-            FROM users
-            WHERE chat_id = ?
-            AND user_id = ?
-            AND waiting_answer = 1
-            """,
-            (
-                chat_id,
-                user_id
-            )
-        ).fetchone()
-
-
-
-def finish_question(
-    chat_id,
-    user_id,
-    target
-):
-
-    with closing(get_connection()) as conn:
-
-        conn.execute(
-            """
-            UPDATE users
-            SET
-                message_count = 0,
-                target_count = ?,
-                waiting_answer = 0,
-                question = NULL,
-                question_message_id = NULL
-            WHERE chat_id = ?
-            AND user_id = ?
-            """,
-            (
-                target,
-                chat_id,
-                user_id
-            )
-        )
-
-        conn.commit()
-
-
-
-# ---------------- POLLS ----------------
-
-
-def save_poll(
-    chat_id,
-    message_id,
-    question,
-    options,
-    ai_choice,
-    reason,
-    challenge_mode
-):
-
-    with closing(get_connection()) as conn:
-
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO polls
-            VALUES
-            (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                chat_id,
-                message_id,
-                question,
-                options,
-                ai_choice,
-                reason,
-                challenge_mode
-            )
-        )
-
-        conn.commit()
-
-
-
-def get_poll(
-    chat_id,
-    message_id
-):
-
-    with closing(get_connection()) as conn:
-
-        return conn.execute(
-            """
-            SELECT *
-            FROM polls
-            WHERE chat_id = ?
-            AND message_id = ?
-            """,
-            (
-                chat_id,
-                message_id
-            )
-        ).fetchone()
-
-
-
-def delete_poll(
-    chat_id,
-    message_id
-):
-
-    with closing(get_connection()) as conn:
-
-        conn.execute(
-            """
-            DELETE FROM polls
-            WHERE chat_id = ?
-            AND message_id = ?
-            """,
-            (
-                chat_id,
-                message_id
-            )
-        )
-
-        conn.commit()
+            }}
