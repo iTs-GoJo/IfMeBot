@@ -414,4 +414,18 @@ def set_question(
             """
             UPDATE users
             SET
-            }}
+                question = ?,
+                waiting_answer = 1,
+                question_message_id = ?
+            WHERE chat_id = ?
+            AND user_id = ?
+            """,
+            (
+                question,
+                message_id,
+                chat_id,
+                user_id,
+            )
+        )
+
+        conn.commit()
