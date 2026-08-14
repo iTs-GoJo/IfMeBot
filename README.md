@@ -207,15 +207,3 @@ See the `LICENSE` file in the project root for license details.
 
 - Q: How do I adjust poll length per group?
   - A: See `POLL_DURATION_SECONDS` in `config.py` and where `context.job_queue.run_once` is used in `bot.py`.
-
----
-
-## Maintainer
-
-iTs-GoJo — thank you for building and sharing this project! If you'd like, I can also:
-
-- Add badges (CI, PyPI) and a screenshot section
-- Provide example `.env.example` or GitHub Actions workflow
-- Translate README to Persian (فارسی)
-
-If you want me to commit the improved README, I'll update the file in the repository now.
