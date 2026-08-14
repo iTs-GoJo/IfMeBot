@@ -14,13 +14,19 @@ from ai import (
     generate_personal_question,
     analyze_personal_answer,
     generate_poll,
+    create_final_poll_opinion,
+)
+
+from levels import (
+    get_level,
+    get_poll_limit,
+    level_up_message,
 )
 
 from config import (
     TELEGRAM_BOT_TOKEN,
     PERSONAL_MIN_MESSAGES,
     PERSONAL_MAX_MESSAGES,
-    GROUP_POLL_MESSAGES,
     POLL_DURATION_SECONDS,
 )
 
@@ -33,10 +39,14 @@ from database import (
     set_question,
     get_pending_question,
     finish_question,
-    increment_group_messages,
+
+    add_group_message,
     get_group,
+    update_level,
+
     reset_group_messages,
     set_poll_active,
+
     save_poll,
     get_poll,
     delete_poll,
@@ -51,164 +61,189 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+
 async def start(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
+
     if update.effective_chat.type not in (
         "group",
         "supergroup",
     ):
         return
 
+
     await update.message.reply_text(
         "😂 سلام بچه‌ها!\n\n"
-        "من یه باتم که هر از گاهی یه سؤال عجیب‌غریب "
-        "می‌پرسم و بعد می‌گم اگه جای شما بودم چی کار می‌کردم.\n\n"
-        "حواستون باشه ممکنه یهو وسط چت سر و کله‌م پیدا شه 👀"
+        "من Reverse AI هستم.\n"
+        "گاهی وسط چت یه سؤال عجیب می‌پرسم "
+        "و بعد می‌گم اگه جای شما بودم چی انتخاب می‌کردم 😈\n\n"
+        "حواستون باشه ممکنه یهو ظاهر شم 👀"
     )
+
 
 
 async def handle_message(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
+
     message = update.message
 
     if not message:
         return
 
+
     chat = update.effective_chat
     user = update.effective_user
 
-    # فقط گروه و سوپرگروه
-    if chat.type not in ("group", "supergroup"):
+
+    if chat.type not in (
+        "group",
+        "supergroup",
+    ):
         return
 
-    # پیام بات‌ها شمرده نشود
+
     if user is None or user.is_bot:
         return
 
-    # فعلاً فقط پیام متنی
+
     if not message.text:
         return
+
+
 
     chat_id = chat.id
     user_id = user.id
     text = message.text.strip()
 
+
     ensure_group(chat_id)
 
-    # --------------------------------------------------
-    # پاسخ به سؤال شخصی
-    # --------------------------------------------------
+
+
+    # -----------------------------
+    # پاسخ به سوال شخصی
+    # -----------------------------
 
     pending = get_pending_question(
         chat_id,
         user_id,
     )
 
+
     if pending:
+
         reply = message.reply_to_message
 
-        # فقط اگر کاربر واقعاً Reply کرده باشد
-        # و Reply دقیقاً به سؤال بات باشد
+
         if (
             reply
             and reply.from_user
             and reply.from_user.is_bot
             and reply.message_id == pending["question_message_id"]
         ):
-            question = pending["question"]
 
             try:
+
                 await message.reply_text(
-                    "🧠 صبر کن ببینم چی می‌گم 😂"
+                    "🧠 دارم فکر می‌کنم 😂"
                 )
 
+
                 answer = await analyze_personal_answer(
-                    question,
+                    pending["question"],
                     text,
                 )
+
 
                 await message.reply_text(
                     f"🤖 {answer}"
                 )
 
-                new_target = random.randint(
-                    PERSONAL_MIN_MESSAGES,
-                    PERSONAL_MAX_MESSAGES,
-                )
 
                 finish_question(
                     chat_id,
                     user_id,
-                    new_target,
+                    random.randint(
+                        PERSONAL_MIN_MESSAGES,
+                        PERSONAL_MAX_MESSAGES,
+                    ),
                 )
+
 
             except Exception:
+
                 logger.exception(
-                    "Error while analyzing answer"
+                    "Personal answer error"
                 )
 
+
                 await message.reply_text(
-                    "😂 یه مشکلی پیش اومد، جوابم نرسید."
+                    "😂 مغزم هنگ کرد، دوباره امتحان کن."
                 )
+
 
             return
 
-        # اگر Reply نکرده، پیام عادی حساب می‌شود.
-        # یعنی سؤال همچنان منتظر پاسخ است.
 
-    # --------------------------------------------------
+
+    # -----------------------------
     # ساخت کاربر
-    # --------------------------------------------------
+    # -----------------------------
 
     user_data = get_user(
         chat_id,
         user_id,
     )
 
+
     if user_data is None:
-        target = random.randint(
-            PERSONAL_MIN_MESSAGES,
-            PERSONAL_MAX_MESSAGES,
-        )
 
         create_user(
             chat_id,
             user_id,
-            target,
+            random.randint(
+                PERSONAL_MIN_MESSAGES,
+                PERSONAL_MAX_MESSAGES,
+            ),
         )
 
-    # --------------------------------------------------
-    # شمارش پیام کاربر
-    # --------------------------------------------------
+
 
     user_count = increment_user_messages(
         chat_id,
         user_id,
     )
 
+
     user_data = get_user(
         chat_id,
         user_id,
     )
 
-    # --------------------------------------------------
-    # سؤال شخصی
-    # --------------------------------------------------
+
+
+    # -----------------------------
+    # سوال شخصی
+    # -----------------------------
 
     if (
         user_count >= user_data["target_count"]
         and not user_data["waiting_answer"]
     ):
+
         try:
+
             question = await generate_personal_question()
+
 
             sent = await message.reply_text(
                 f"🤔 یه سؤال برات:\n\n{question}"
             )
+
 
             set_question(
                 chat_id,
@@ -217,51 +252,94 @@ async def handle_message(
                 sent.message_id,
             )
 
+
         except Exception:
+
             logger.exception(
-                "Error generating personal question"
+                "Question generation error"
             )
 
-            await message.reply_text(
-                "😂 مغزم هنگ کرد، فعلاً سؤال ندارم."
-            )
 
-    # --------------------------------------------------
-    # شمارش پیام‌های کل گروه
-    # --------------------------------------------------
 
-    group_count = increment_group_messages(
+    # -----------------------------
+    # XP و Level گروه
+    # -----------------------------
+
+    old_group = get_group(chat_id)
+
+    old_level = old_group["level"]
+
+
+    group_data = add_group_message(
         chat_id
     )
 
-    group_data = get_group(chat_id)
 
-    if (
-        group_count >= GROUP_POLL_MESSAGES
-        and not group_data["poll_active"]
-    ):
-        await create_group_poll(
-            update,
-            context,
+    new_level = get_level(
+        group_data["xp"]
+    )
+
+
+    if new_level > old_level:
+
+        update_level(
+            chat_id,
+            new_level,
         )
 
 
-async def create_group_poll(
+        level_message = level_up_message(
+            old_level,
+            new_level,
+        )
+
+
+        if level_message:
+
+            await message.reply_text(
+                level_message
+            )
+
+
+    poll_limit = get_poll_limit(
+        new_level
+    )
+
+
+    if (
+        group_data["message_count"] >= poll_limit
+        and not group_data["poll_active"]
+    ):
+
+        await create_group_poll(
+            update,
+            context,
+    )
+        async def create_group_poll(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+
     chat_id = update.effective_chat.id
 
-    # قفل فوری برای جلوگیری از Poll تکراری
-    set_poll_active(chat_id, True)
+
+    set_poll_active(
+        chat_id,
+        True,
+    )
+
 
     try:
+
         poll = await generate_poll()
+
 
         question = poll["question"]
         options = poll["options"]
         ai_choice = poll["ai_choice"]
         reason = poll["reason"]
+        challenge_mode = poll["challenge_mode"]
+
 
         sent = await context.bot.send_poll(
             chat_id=chat_id,
@@ -271,10 +349,11 @@ async def create_group_poll(
             allows_multiple_answers=False,
         )
 
+
         options_text = "\n".join(
-            f"{i}. {option}"
-            for i, option in enumerate(options)
+            options
         )
+
 
         save_poll(
             chat_id=chat_id,
@@ -283,9 +362,16 @@ async def create_group_poll(
             options=options_text,
             ai_choice=ai_choice,
             reason=reason,
+            challenge_mode=int(
+                challenge_mode
+            ),
         )
 
-        reset_group_messages(chat_id)
+
+        reset_group_messages(
+            chat_id
+        )
+
 
         context.job_queue.run_once(
             finish_poll,
@@ -297,10 +383,13 @@ async def create_group_poll(
             name=f"poll_{chat_id}_{sent.message_id}",
         )
 
+
     except Exception:
+
         logger.exception(
-            "Error creating group poll"
+            "Create poll error"
         )
+
 
         set_poll_active(
             chat_id,
@@ -308,53 +397,104 @@ async def create_group_poll(
         )
 
 
+
+
 async def finish_poll(
     context: ContextTypes.DEFAULT_TYPE,
 ):
+
     data = context.job.data
+
 
     chat_id = data["chat_id"]
     message_id = data["message_id"]
+
 
     poll_data = get_poll(
         chat_id,
         message_id,
     )
 
+
     if poll_data is None:
-        set_poll_active(chat_id, False)
+
+        set_poll_active(
+            chat_id,
+            False,
+        )
+
         return
 
+
+
     try:
+
         result = await context.bot.stop_poll(
             chat_id=chat_id,
             message_id=message_id,
         )
 
-        ai_choice = poll_data["ai_choice"]
-        reason = poll_data["reason"]
 
-        ai_option = result.options[ai_choice].text
+        ai_choice = poll_data["ai_choice"]
+
+
+        ai_option = (
+            result.options[ai_choice].text
+        )
+
+
+        result_text = "\n".join(
+            f"{option.text}: {option.voter_count} رای"
+            for option in result.options
+        )
+
+
+        try:
+
+            opinion = await create_final_poll_opinion(
+                poll_data["question"],
+                poll_data["options"].split("\n"),
+                ai_option,
+                result_text,
+            )
+
+
+        except Exception:
+
+            logger.exception(
+                "AI opinion error"
+            )
+
+            opinion = (
+                f"من گزینه {ai_option} رو انتخاب می‌کردم 😂"
+            )
+
+
 
         await context.bot.send_message(
             chat_id=chat_id,
             text=(
-                "📊 خب، رأی‌گیری تموم شد 😂\n\n"
-                f"🤖 من: {ai_option}\n\n"
-                f"💭 دلیلش:\n{reason}"
+                "📊 رأی‌گیری تموم شد 😂\n\n"
+                f"{result_text}\n\n"
+                f"🤖 نظر من:\n{opinion}"
             ),
         )
 
+
     except Exception:
+
         logger.exception(
-            "Error finishing poll"
+            "Finish poll error"
         )
 
+
     finally:
+
         delete_poll(
             chat_id,
             message_id,
         )
+
 
         set_poll_active(
             chat_id,
@@ -362,43 +502,69 @@ async def finish_poll(
         )
 
 
+
+
+
 async def error_handler(
     update: object,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+
     logger.exception(
         "Unhandled exception:",
         exc_info=context.error,
     )
 
 
+
+
+
 def context_has_job_queue():
+
     try:
+
         from telegram.ext import JobQueue
 
         return JobQueue is not None
+
+
     except ImportError:
+
         return False
 
 
+
+
+
 def main():
+
     if not TELEGRAM_BOT_TOKEN:
+
         raise RuntimeError(
             "TELEGRAM_BOT_TOKEN is not set"
         )
 
+
+
     if not context_has_job_queue():
+
         raise RuntimeError(
             "Install python-telegram-bot[job-queue]"
         )
 
+
+
     init_db()
+
+
 
     application = (
         Application.builder()
         .token(TELEGRAM_BOT_TOKEN)
         .build()
     )
+
+
 
     application.add_handler(
         CommandHandler(
@@ -407,6 +573,8 @@ def main():
         )
     )
 
+
+
     application.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
@@ -414,16 +582,25 @@ def main():
         )
     )
 
+
+
     application.add_error_handler(
         error_handler
     )
 
+
+
     logger.info(
-        "Reverse AI started..."
+        "Reverse AI v2 started..."
     )
+
+
 
     application.run_polling()
 
 
+
+
 if __name__ == "__main__":
+
     main()
