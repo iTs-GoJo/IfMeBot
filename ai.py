@@ -1,5 +1,4 @@
 import json
-
 import httpx
 
 from config import (
@@ -11,9 +10,10 @@ from config import (
 
 async def call_ai(
     messages,
-    temperature=0.8,
+    temperature=0.9,
     max_tokens=500
 ):
+
     url = f"{AI_BASE_URL.rstrip('/')}/chat/completions"
 
     headers = {
@@ -28,177 +28,317 @@ async def call_ai(
         "max_tokens": max_tokens,
     }
 
-    async with httpx.AsyncClient(timeout=60) as client:
+
+    async with httpx.AsyncClient(
+        timeout=60
+    ) as client:
+
         response = await client.post(
             url,
             headers=headers,
-            json=payload,
+            json=payload
         )
 
         response.raise_for_status()
 
         data = response.json()
 
-    return data["choices"][0]["message"]["content"].strip()
+
+    return (
+        data["choices"][0]
+        ["message"]
+        ["content"]
+        .strip()
+    )
+
+
+
+# ---------------- PERSONAL QUESTION ----------------
 
 
 async def generate_personal_question():
+
     messages = [
+
         {
             "role": "system",
-            "content": (
-                "تو یه رفیق خودمونی توی تلگرامی که هر از گاهی "
-                "یه سؤال جالب و رندوم از یه نفر می‌پرسی.\n\n"
+            "content": """
+تو یه رفیق خودمونی توی تلگرامی.
 
-                "یک سؤال فرضی و دو راهی یا چند انتخابی بساز "
-                "که جواب دادن بهش سرگرم‌کننده باشه و آدم رو "
-                "کمی به فکر بندازه.\n\n"
+هر از گاهی یه سوال جالب، عجیب یا فان از یه نفر بپرس.
 
-                "لحن کاملاً خودمونی و طبیعی باشه؛ "
-                "مثل حرف زدن با یه رفیق، نه مثل ربات یا "
-                "متن رسمی و کتابی.\n\n"
+قوانین:
+- فارسی خودمونی
+- کوتاه
+- جذاب
+- باعث فکر کردن بشه
+- رسمی نباشه
+- مثل ربات حرف نزن
+- اطلاعات شخصی حساس نپرس
 
-                "سؤال کوتاه باشه.\n"
-                "از اطلاعات شخصی حساس سؤال نکن.\n"
-                "هیچ توضیح اضافه‌ای نده.\n"
-                "فقط خود سؤال رو به فارسی برگردون."
-            ),
+فقط خود سوال رو بنویس.
+"""
         },
+
         {
             "role": "user",
-            "content": (
-                "یه سؤال کاملاً رندوم و جالب بساز."
-            ),
-        },
+            "content":
+            "یه سوال رندوم بساز 😂"
+        }
+
     ]
+
 
     return await call_ai(
         messages,
         temperature=1.1,
-        max_tokens=150,
+        max_tokens=150
     )
+
+
+
+# ---------------- PERSONAL ANSWER ----------------
 
 
 async def analyze_personal_answer(
-    question: str,
-    answer: str
+    question,
+    answer
 ):
+
     messages = [
+
         {
             "role": "system",
-            "content": (
-                "تو یه رفیق خودمونی توی تلگرامی.\n\n"
+            "content": """
+تو یه رفیق تلگرامی هستی.
 
-                "سؤال و جواب کاربر رو ببین و فرض کن خودت "
-                "دقیقاً توی همون موقعیت بودی.\n\n"
+به جواب کاربر نگاه کن و تصور کن خودت جای اون بودی.
 
-                "بعد خیلی کوتاه و طبیعی بگو اگه جای اون بودی "
-                "همین انتخاب رو می‌کردی یا یه گزینه دیگه رو.\n\n"
+بگو:
+- اگه جای اون بودی همین انتخاب رو می‌کردی؟
+- یا یه انتخاب دیگه؟
 
-                "لحن باید کاملاً خودمونی، دوستانه و طبیعی باشه؛ "
-                "نه رسمی، نه کتابی، نه رباتی و نه شبیه "
-                "پشتیبانی سایت.\n\n"
+لحن:
+- خودمونی
+- کوتاه
+- دوستانه
+- کمی فان
 
-                "مثلاً می‌تونی بگی:\n"
-                "«من جای تو بودم احتمالاً همینو انتخاب می‌کردم 😂 "
-                "چون به نظرم...»\n\n"
+مثل:
+"من جای تو بودم احتمالاً همینو می‌زدم 😂 چون..."
 
-                "یا:\n"
-                "«نه داداش، من جای تو بودم احتمالاً گزینه B رو "
-                "می‌زدم 😂 چون...»\n\n"
-
-                "جواب کوتاه باشه.\n"
-                "شخصیت کاربر رو تحلیل نکن.\n"
-                "از پیام‌های قبلی حرف نزن.\n"
-                "فقط درباره همین سؤال و جواب صحبت کن."
-            ),
+تحلیل شخصیت نکن.
+رسمی حرف نزن.
+"""
         },
+
         {
             "role": "user",
-            "content": (
-                f"سؤال:\n{question}\n\n"
-                f"جواب کاربر:\n{answer}"
-            ),
-        },
+            "content": f"""
+سوال:
+{question}
+
+جواب:
+{answer}
+"""
+        }
+
     ]
+
 
     return await call_ai(
         messages,
-        temperature=0.9,
-        max_tokens=250,
+        temperature=0.8,
+        max_tokens=250
     )
+
+
+
+# ---------------- GROUP POLL ----------------
 
 
 async def generate_poll():
+
     messages = [
+
         {
             "role": "system",
-            "content": (
-                "تو یه رفیق خودمونی توی یه گروه تلگرامی هستی.\n\n"
+            "content": """
+تو یه عضو باحال یه گروه تلگرامی هستی.
 
-                "یک سؤال فرضی و جذاب برای نظرسنجی بساز "
-                "که اعضای گروه واقعاً درباره‌ش بحث کنند.\n\n"
+یک نظرسنجی جذاب بساز.
 
-                "لحن کاملاً خودمونی و طبیعی باشه، نه رسمی "
-                "و نه رباتی.\n\n"
+موضوع:
+تصمیم‌های فرضی، انتخاب‌های سخت، چیزهای فان.
 
-                "حتماً 4 گزینه داشته باشه.\n\n"
+قوانین:
+- فارسی خودمونی
+- 4 گزینه دقیق
+- سوال باعث بحث بشه
+- رسمی نباشه
 
-                "پاسخ خودت رو هم قبل از رأی‌گیری انتخاب کن "
-                "و دلیل کوتاهی برای انتخابت بنویس.\n\n"
+خروجی فقط JSON معتبر باشد:
 
-                "فقط JSON معتبر برگردون و هیچ متن دیگری "
-                "خارج از JSON ننویس.\n\n"
+{
+ "question":"",
+ "options":[
+   "",
+   "",
+   "",
+   ""
+ ],
+ "ai_choice":0,
+ "reason":"",
+ "challenge_mode":true
+}
 
-                "{\n"
-                '  "question": "سؤال",\n'
-                '  "options": ["گزینه 1", "گزینه 2", "گزینه 3", "گزینه 4"],\n'
-                '  "ai_choice": 0,\n'
-                '  "reason": "دلیل کوتاه و خودمونی"\n'
-                "}\n\n"
 
-                "ai_choice باید یکی از 0، 1، 2 یا 3 باشه.\n"
-                "سؤال درباره اطلاعات شخصی حساس نباشه."
-            ),
+توضیح:
+
+ai_choice:
+شماره انتخاب خودت از 0 تا 3
+
+reason:
+دلیل کوتاه و خودمونی
+
+challenge_mode:
+گاهی true و گاهی false.
+اگر true باشد بعداً ممکن است با اکثریت مخالفت کنی.
+"""
         },
+
+
         {
             "role": "user",
-            "content": "یه نظرسنجی کاملاً رندوم و خفن بساز 😂",
-        },
+            "content":
+            "یه نظرسنجی خفن بساز 😂"
+        }
+
     ]
+
 
     raw = await call_ai(
         messages,
-        temperature=1.1,
-        max_tokens=500,
+        temperature=1.2,
+        max_tokens=500
     )
+
 
     raw = raw.strip()
 
+
     if raw.startswith("```"):
-        raw = raw.replace("```json", "", 1)
-        raw = raw.replace("```", "", 1)
+
+        raw = raw.replace(
+            "```json",
+            ""
+        )
+
+        raw = raw.replace(
+            "```",
+            ""
+        )
+
         raw = raw.strip()
+
+
 
     data = json.loads(raw)
 
-    question = data["question"]
-    options = data["options"]
-    ai_choice = int(data["ai_choice"])
-    reason = data["reason"]
 
-    if not isinstance(options, list):
-        raise ValueError("AI returned invalid options")
+    if len(data["options"]) != 4:
+        raise ValueError(
+            "Poll must have 4 options"
+        )
 
-    if len(options) != 4:
-        raise ValueError("AI must return exactly 4 options")
 
-    if ai_choice not in range(4):
-        raise ValueError("Invalid AI choice")
+    if data["ai_choice"] not in range(4):
+        raise ValueError(
+            "Invalid ai choice"
+        )
+
 
     return {
-        "question": question,
-        "options": options,
-        "ai_choice": ai_choice,
-        "reason": reason,
+
+        "question":
+            data["question"],
+
+        "options":
+            data["options"],
+
+        "ai_choice":
+            int(data["ai_choice"]),
+
+        "reason":
+            data["reason"],
+
+        "challenge_mode":
+            bool(
+                data.get(
+                    "challenge_mode",
+                    False
+                )
+            )
     }
+
+
+
+# ---------------- FINAL POLL OPINION ----------------
+
+
+async def create_final_poll_opinion(
+    question,
+    options,
+    ai_choice,
+    result
+):
+
+    messages = [
+
+        {
+            "role": "system",
+            "content": """
+تو بعد از یک نظرسنجی گروهی نظر خودت رو می‌گی.
+
+لحن:
+- خودمونی
+- مثل عضو گروه
+- کوتاه
+- کمی فان
+
+اگر اکثریت با انتخاب تو بودند:
+بگو خوشحالم که هم‌نظر شدیم.
+
+اگر مخالف بودند:
+بگو باحال بود ولی من هنوز انتخاب خودم رو ترجیح می‌دم.
+
+در آخر دلیل کوتاه بده.
+"""
+        },
+
+
+        {
+            "role": "user",
+            "content": f"""
+سوال:
+{question}
+
+گزینه‌ها:
+{options}
+
+انتخاب من:
+{ai_choice}
+
+نتیجه رای:
+{result}
+"""
+        }
+
+    ]
+
+
+    return await call_ai(
+        messages,
+        temperature=0.8,
+        max_tokens=250
+    )
